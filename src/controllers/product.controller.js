@@ -80,7 +80,7 @@ class ProductController {
   }
 
   /**
-   * get all products by category
+   * get all products by caetgory
    *
    * @static
    * @param {object} req express request object
@@ -215,12 +215,7 @@ class ProductController {
    */
   static async getAllCategories(req, res, next) {
     // Implement code to get all categories here
-    try {
-      const categories = await Category.findAll();
-      return res.status(200).json(categories);
-    } catch (error) {
-      return next(error);
-    }
+    return res.status(200).json({ message: 'this works' });
   }
 
   /**
@@ -230,21 +225,9 @@ class ProductController {
    * @param {*} next
    */
   static async getSingleCategory(req, res, next) {
-    const { category_id } = req.params; // eslint-disable-line
-    try {
-      const category = await Category.findByPk(category_id);
-      if (category) {
-        return res.status(200).json(category);
-      }
-      return res.status(404).json({
-        error: {
-          status: 404,
-          message: `Category with id ${category_id} does not exist`,  // eslint-disable-line
-        }
-      });
-    } catch (error) {
-      return next(error);
-    }
+    const { category_id } = req.params;  // eslint-disable-line
+    // implement code to get a single category here
+    return res.status(200).json({ message: 'this works' });
   }
 
   /**
@@ -254,17 +237,9 @@ class ProductController {
    * @param {*} next
    */
   static async getDepartmentCategories(req, res, next) {
-    try {
-      const { department_id } = req.params; // eslint-disable-line
-      const categories = await Category.findAll({
-        where: {
-          department_id,
-        },
-      });
-      return res.status(200).json(categories);
-    } catch (error) {
-      return next(error);
-    }
+    const { department_id } = req.params;  // eslint-disable-line
+    // implement code to get categories in a department here
+    return res.status(200).json({ message: 'this works' });
   }
 }
 
