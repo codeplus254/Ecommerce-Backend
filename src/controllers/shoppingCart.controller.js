@@ -21,6 +21,7 @@ import { Order, OrderDetail, Customer, ShoppingCart, Product } from '../database
 
 const uuidv4 = require('uuid/v4');
 const jwt = require('jsonwebtoken');
+const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 /**
  *
  *
@@ -312,7 +313,6 @@ class ShoppingCartController {
         include: [
           {
             model: Customer,
-            as: 'name',
             attributes: ['name'],
           },
         ],
@@ -396,9 +396,41 @@ class ShoppingCartController {
    */
   static async processStripePayment(req, res, next) {
     const { email, stripeToken, order_id } = req.body; // eslint-disable-line
-    const { customer_id } = req;  // eslint-disable-line
+    const accessToken = req.headers.authorization;
+    const decodedToken = jwt.decode(accessToken.substring(7)); // remove the Bearer tag
+    const customerId = decodedToken.customer_id;
+    let stripeResponse;
     try {
       // implement code to process payment and send order confirmation email here
+      if (customerId) {
+        const chargeAmount = await Order.findOne({
+          where: {
+            order_id,
+          },
+          attributes: ['total_amount'],
+        });
+        stripe.charges.create(
+          {
+            // amount: chargeAmount.dataValues.total_amount,
+            amount: 200,
+            currency: 'usd',
+            source: stripeToken,
+            description: order_id,
+          },
+          // eslint-disable-next-line func-names
+          function(err, charge) {
+            // asynchronously called
+            if (err && err.type === 'StripeCardError') {
+              res.status(400).json('Your card was declined');
+            }
+            res.status(200).json({
+              charge,
+              message: 'Your transaction was successful.',
+            });
+          }
+        );
+        return res;
+      }
     } catch (error) {
       return next(error);
     }
