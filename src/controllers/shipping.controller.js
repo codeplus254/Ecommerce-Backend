@@ -22,9 +22,7 @@ class ShippingController {
   static async getShippingRegions(req, res, next) {
     try {
       const shippingRegions = await ShippingRegion.findAll();
-      return res.status(200).json({
-        shippingRegions,
-      });
+      return res.status(200).json(shippingRegions);
     } catch (error) {
       return next(error);
     }
@@ -49,9 +47,7 @@ class ShippingController {
         },
       });
 
-      return res.status(200).json({
-        shippingTypes,
-      });
+      return res.status(200).json(shippingTypes);
     } catch (error) {
       return next(error);
     }
