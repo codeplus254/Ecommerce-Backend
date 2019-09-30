@@ -6,6 +6,6 @@ const router = Router();
 // These are valid routes but they may contain a bug, please try to define and fix them
 
 router.get('/tax', TaxController.getAllTax);
-router.get('/tax/:tax_id', TaxController.call);
+router.get('/tax/:tax_id', TaxController.getSingleTax);
 
 export default router;

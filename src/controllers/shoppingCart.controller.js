@@ -17,9 +17,9 @@
  *  NB: Check the BACKEND CHALLENGE TEMPLATE DOCUMENTATION in the readme of this repository to see our recommended
  *  endpoints, request body/param, and response object for each of these method
  */
+import { Order, OrderDetail, Customer, ShoppingCart, Product } from '../database/models';
 
-import { Order, OrderDetail, Customer } from '../database/models';
-
+const uuidv4 = require('uuid/v4');
 const jwt = require('jsonwebtoken');
 /**
  *
@@ -28,8 +28,9 @@ const jwt = require('jsonwebtoken');
  */
 class ShoppingCartController {
   /**
-   * generate random unique id for cart identifier
-   *
+   * Generate a shopping cart_id
+   * Generates a new timestamped string(uuid string),
+   * and gets the last substring of the generated uuid
    * @static
    * @param {obj} req express request object
    * @param {obj} res express response object
@@ -37,8 +38,12 @@ class ShoppingCartController {
    * @memberof shoppingCartController
    */
   static generateUniqueCart(req, res) {
-    // implement method to generate unique cart Id
-    return res.status(200).json({ message: 'this works' });
+    // eslint-disable-next-line camelcase
+    const cart_id = uuidv4();
+
+    return res.status(200).send({
+      cart_id,
+    });
   }
 
   /**
@@ -51,8 +56,36 @@ class ShoppingCartController {
    * @memberof ShoppingCartController
    */
   static async addItemToCart(req, res, next) {
-    // implement function to add item to cart
-    return res.status(200).json({ message: 'this works' });
+    // eslint-disable-next-line camelcase
+    const { cart_id, product_id, attributes, quantity } = req.body;
+    const accessToken = req.headers.authorization;
+    const decodedToken = jwt.decode(accessToken.substring(7)); // remove the Bearer tag
+    const customerId = decodedToken.customer_id;
+
+    try {
+      let shopping;
+      if (customerId) {
+        shopping = await ShoppingCart.upsert({
+          cart_id: cart_id.substring(10),
+          product_id,
+          attributes,
+          quantity,
+        });
+      }
+      if (shopping) {
+        const lastEntry = await ShoppingCart.findOne({
+          where: {
+            product_id,
+          },
+          order: [['added_on', 'DESC']],
+          attributes: ['item_id', 'cart_id', 'product_id', 'attributes', 'quantity'],
+        });
+        return res.status(201).json(lastEntry);
+      }
+      return res.status(400).json('Could not add item to cart.');
+    } catch (error) {
+      return next(error);
+    }
   }
 
   /**
@@ -66,7 +99,58 @@ class ShoppingCartController {
    */
   static async getCart(req, res, next) {
     // implement method to get cart items
-    return res.status(200).json({ message: 'this works' });
+    const accessToken = req.headers.authorization;
+    const decodedToken = jwt.decode(accessToken.substring(7)); // remove the Bearer tag
+    const customerId = decodedToken.customer_id;
+    // eslint-disable-next-line camelcase
+    const { cart_id } = req.params;
+    try {
+      let cart;
+      if (customerId) {
+        cart = await ShoppingCart.findAll({
+          where: {
+            cart_id,
+          },
+          attributes: ['item_id', 'cart_id', 'product_id', 'attributes', 'quantity'],
+          include: [
+            {
+              model: Product,
+              attributes: ['name', 'price', 'discounted_price', 'image'],
+            },
+          ],
+        });
+      }
+      if (cart) {
+        const items = cart.map(item => {
+          const {
+            // eslint-disable-next-line camelcase
+            item_id,
+            quantity,
+            attributes,
+            // eslint-disable-next-line camelcase
+            product_id,
+            // eslint-disable-next-line camelcase
+            Product: { name, discounted_price, price, image },
+          } = item;
+          return {
+            item_id,
+            cart_id,
+            name,
+            attributes,
+            product_id,
+            image,
+            price,
+            discounted_price,
+            quantity,
+            subtotal: quantity * price,
+          };
+        });
+        return res.status(200).json(items);
+      }
+      return res.status(404).json('Could not find a cart with that id.');
+    } catch (error) {
+      return next(error);
+    }
   }
 
   /**
@@ -80,7 +164,30 @@ class ShoppingCartController {
    */
   static async updateCartItem(req, res, next) {
     const { item_id } = req.params // eslint-disable-line
-    return res.status(200).json({ message: 'this works' });
+    const { quantity } = req.body;
+    const accessToken = req.headers.authorization;
+    const decodedToken = jwt.decode(accessToken.substring(7)); // remove the Bearer tag
+    const customerId = decodedToken.customer_id;
+    try {
+      if (customerId) {
+        await ShoppingCart.update(
+          {
+            quantity,
+          },
+          {
+            returning: true,
+            where: {
+              // eslint-disable-next-line prettier/prettier
+              item_id
+            },
+          }
+        );
+      }
+      const updatedItem = await ShoppingCart.findByPk(item_id);
+      return res.status(200).json(updatedItem);
+    } catch (error) {
+      return next(error);
+    }
   }
 
   /**
@@ -93,8 +200,27 @@ class ShoppingCartController {
    * @memberof ShoppingCartController
    */
   static async emptyCart(req, res, next) {
-    // implement method to empty cart
-    return res.status(200).json({ message: 'this works' });
+    const { cart_id } = req.params // eslint-disable-line
+    const accessToken = req.headers.authorization;
+    const decodedToken = jwt.decode(accessToken.substring(7)); // remove the Bearer tag
+    const customerId = decodedToken.customer_id;
+    try {
+      let emptyCart;
+      if (customerId) {
+        emptyCart = await ShoppingCart.destroy({
+          where: {
+            // eslint-disable-next-line prettier/prettier
+            cart_id
+          },
+        });
+      }
+      if (emptyCart) {
+        return res.status(200).json([]);
+      }
+      return res.status(400).json('Unable to empty cart');
+    } catch (error) {
+      return next(error);
+    }
   }
 
   /**
@@ -108,9 +234,24 @@ class ShoppingCartController {
    * @memberof ShoppingCartController
    */
   static async removeItemFromCart(req, res, next) {
-
+    const { item_id } = req.params // eslint-disable-line
+    const accessToken = req.headers.authorization;
+    const decodedToken = jwt.decode(accessToken.substring(7)); // remove the Bearer tag
+    const customerId = decodedToken.customer_id;
     try {
-      // implement code to remove item from cart here
+      let removedItem;
+      if (customerId) {
+        removedItem = await ShoppingCart.destroy({
+          where: {
+            // eslint-disable-next-line prettier/prettier
+            item_id
+          },
+        });
+      }
+      if (removedItem) {
+        return res.status(200).json({ message: 'successfully removed the item' });
+      }
+      return res.status(400).json('Unable to remove the item');
     } catch (error) {
       return next(error);
     }
