@@ -55,7 +55,7 @@ class ProductController {
       page = 1;
     } else if (page < 1) {
       page = 1;
-    };
+    }
     if (!limit) {
       limit = 20;
     }
@@ -65,20 +65,34 @@ class ProductController {
       description_length = 200;
     }
     const offset = Number(page) * Number(limit) - Number(limit);
-    const maximum = offset + Number(limit);
     const sqlQueryMap = {
       offset,
       limit: Number(limit),
     };
-    const paginationMeta = {
-      currentPage: offset,
-      currentPageSize: limit,
-    };
+
     try {
       const products = await Product.findAndCountAll(sqlQueryMap);
+      const productList = products.rows.map(product => {
+        // eslint-disable-next-line camelcase
+        const { product_id, name, description, price, discounted_price, thumbnail } = product;
+        return {
+          product_id,
+          name,
+          description: description.substring(0, description_length),
+          price,
+          discounted_price,
+          thumbnail,
+        };
+      });
+      const paginationMeta = {
+        currentPage: Number(offset),
+        currentPageSize: Number(limit),
+        totalPages: Math.ceil(products.count / Number(limit)),
+        totalRecords: products.count,
+      };
       return res.status(200).json({
         paginationMeta,
-        products,
+        rows: productList,
       });
     } catch (error) {
       return next(error);
@@ -95,11 +109,74 @@ class ProductController {
    * @returns {json} json object with status and product data
    * @memberof ProductController
    */
-  static async searchProduct(req, res, next) {
-    const { query_string, all_words } = req.query;  // eslint-disable-line
+  static async searchProduct(req, res, next) { 
     // all_words should either be on or off
     // implement code to search product
-    return res.status(200).json({ message: 'this works' });
+    let { page, limit, description_length, all_words, query_string } = req.query; // eslint-disable-line
+    if (!page) {
+      page = 1;
+    } else if (page < 1) {
+      page = 1;
+    }
+    if (!limit) {
+      limit = 20;
+    }
+    // eslint-disable-next-line camelcase
+    if (!description_length) {
+      // eslint-disable-next-line camelcase
+      description_length = 200;
+    }
+    const offset = Number(page) * Number(limit) - Number(limit);
+
+    let products;
+    try {
+      // eslint-disable-next-line camelcase
+      if (all_words === 'off') {
+        const wordQueries = query_string.split(/[ ,]+/).filter(Boolean); // split string at comma and/orspace
+        const queryArray = [];
+        for (let i = 0; i < wordQueries.length; i++) {
+          queryArray.push({ [Op.like]: `%${wordQueries[i]}%` });
+        }
+        products = await Product.findAll({
+          where: {
+            name: {
+              // compare array of [Op.like] queries
+              [Op.or]: queryArray,
+            },
+          },
+          offset,
+          limit: Number(limit),
+        });
+      } else {
+        products = await Product.findAll({
+          where: {
+            name: {
+              // eslint-disable-next-line camelcase
+              [Op.like]: `%${query_string}%`,
+            },
+          },
+          offset,
+          limit: Number(limit),
+        });
+      }
+      const productList = products.map(product => {
+        // eslint-disable-next-line camelcase
+        const { product_id, name, description, price, discounted_price, thumbnail } = product;
+        return {
+          product_id,
+          name,
+          description: description.substring(0, description_length),
+          price,
+          discounted_price,
+          thumbnail,
+        };
+      });
+      return res.status(200).json({
+        rows: productList,
+      });
+    } catch (error) {
+      return next(error);
+    }
   }
 
   /**
@@ -115,9 +192,8 @@ class ProductController {
   static async getProductsByCategory(req, res, next) {
 
     try {
-      const { query, params } = req;
-      const { category_id } = params; // eslint-disable-line
-      let { page, limit, description_length } = query;
+      const { category_id } = req.params; // eslint-disable-line
+      let { page, limit, description_length } = req.query;
       const offset = Number(page) * Number(limit) - Number(limit);
       if (!page) {
         page = 1;
@@ -249,7 +325,18 @@ class ProductController {
     try {
       const product = await Product.findByPk(product_id);
       if (product) {
-        return res.status(200).json(product);
+        const { name, description, price, discounted_price, image, image_2, thumbnail, display  } = product;
+        return res.status(200).json({
+          product_id,
+          name,
+          description: description.substring(0, description_length),
+          price,
+          discounted_price,
+          image,
+          image_2,
+          thumbnail,
+          display,
+        });
       }
       return res.status(404).json({
         error: {
@@ -422,7 +509,12 @@ class ProductController {
   static async getSingleCategory(req, res, next) {
     const { category_id } = req.params; // eslint-disable-line
     try {
-      const category = await Category.findByPk(category_id);
+      const category = await Category.findOne({
+        where: {
+          category_id,
+        },
+        attributes: ['category_id', 'name', 'description', 'description', 'department_id'],
+      });
       if (category) {
         return res.status(200).json(category);
       }
@@ -432,6 +524,34 @@ class ProductController {
           message: `Category with id ${category_id} does not exist`,  // eslint-disable-line
         }
       });
+    } catch (error) {
+      return next(error);
+    }
+  }
+
+  /**
+   * This method should get category of a particular product
+   * @param {*} req
+   * @param {*} res
+   * @param {*} next
+   */
+  static async getProductCategory(req, res, next) {
+    try {
+      const { product_id } = req.params; // eslint-disable-line
+      const category = await ProductCategory.findOne({
+        where: {
+          product_id,
+        },
+        include: [
+          {
+            model: Category,
+            as: 'category',
+            attributes: ['category_id', 'department_id', 'name'],
+          },
+        ],
+        attributes: [],
+      });
+      return res.status(200).json(category.dataValues.category);
     } catch (error) {
       return next(error);
     }
@@ -450,8 +570,9 @@ class ProductController {
         where: {
           department_id,
         },
+        attributes: ['category_id', 'name', 'description', 'department_id'],
       });
-      return res.status(200).json(categories);
+      return res.status(200).json({ rows: categories });
     } catch (error) {
       return next(error);
     }
