@@ -353,7 +353,7 @@ class ShoppingCartController {
     }
   }
 
-    /**
+  /**
    *
    *
    * @static
