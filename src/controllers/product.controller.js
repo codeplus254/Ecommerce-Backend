@@ -345,18 +345,7 @@ class ProductController {
     try {
       const product = await Product.findByPk(product_id);
       if (product) {
-        const {
-          name,
-          description,
-          price,
-          // eslint-disable-next-line camelcase
-          discounted_price,
-          image,
-          // eslint-disable-next-line camelcase
-          image_2,
-          thumbnail,
-          display,
-        } = product;
+        const { name, description, price, discounted_price, image, image_2, thumbnail, display  } = product; // eslint-disable-line
         return res.status(200).json({
           product_id,
           name,
@@ -373,7 +362,7 @@ class ProductController {
         error: {
           status: 404,
           message: `Product with id ${product_id} does not exist`,  // eslint-disable-line
-        }
+        },
       });
     } catch (error) {
       return next(error);
