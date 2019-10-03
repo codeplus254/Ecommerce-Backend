@@ -12,10 +12,12 @@
  *  NB: Check the BACKEND CHALLENGE TEMPLATE DOCUMENTATION in the readme of this repository to see our recommended
  *  endpoints, request body/param, and response object for each of these method
  */
-import { Customer } from '../database/models';
+import { Customer, Sequelize } from '../database/models';
 
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcrypt');
+
+const { Op } = Sequelize;
 /**
  *
  *
@@ -43,7 +45,7 @@ class CustomerController {
         },
       });
       if (!customer) {
-        // check if the customer with that email had registered before
+        // ensure the email has not been registered before
         const passwordHash = bcrypt.hashSync(password, 10);
         const newCustomer = await Customer.upsert({
           name,
@@ -76,24 +78,57 @@ class CustomerController {
   static async login(req, res, next) {
     // implement function to login to user account
     const { email, password } = req.body;
+
     try {
       const customer = await Customer.findOne({
         where: {
           email,
-          password,
         },
       });
-      const accessToken = `Bearer ${await jwt.sign(
-        { customer_id: customer.customer_id },
-        process.env.SECRET_KEY,
-        { expiresIn: '24h' }
-      )}`;
+
       if (customer) {
-        return res.status(200).json({
-          customer,
-          accessToken,
-          expiresIn: '24h',
-        });
+        if (bcrypt.compareSync(password, customer.password)) {
+          const accessToken = `Bearer ${await jwt.sign(
+            { customer_id: customer.customer_id },
+            process.env.SECRET_KEY,
+            { expiresIn: '24h' }
+          )}`;
+          const {
+            customer_id, // eslint-disable-line
+            name,
+            email, // eslint-disable-line
+            address_1, // eslint-disable-line
+            address_2, // eslint-disable-line
+            city,
+            region,
+            postal_code, // eslint-disable-line
+            shipping_region_id, // eslint-disable-line
+            credit_card, // eslint-disable-line
+            day_phone, // eslint-disable-line
+            eve_phone, // eslint-disable-line
+            mob_phone, // eslint-disable-line
+          } = customer;
+          return res.status(200).json({
+            customer: {
+              customer_id,
+              name,
+              email,
+              address_1,
+              address_2,
+              city,
+              region,
+              postal_code,
+              shipping_region_id,
+              credit_card,
+              day_phone,
+              eve_phone,
+              mob_phone,
+            },
+            accessToken,
+            expiresIn: '24h',
+          });
+        }
+        return res.status(401).json({ message: 'Incorrect password' });
       }
       return res.status(404).json({
         error: {
@@ -188,24 +223,37 @@ class CustomerController {
     const decodedToken = jwt.decode(accessToken.substring(7)); // remove the Bearer tag
     const customerId = decodedToken.customer_id;
     try {
-      await Customer.update(
-        {
+      const existingEmail = await Customer.findOne({
+        where: {
           email,
-          name,
-          day_phone,
-          eve_phone,
-          mob_phone,
-        },
-        {
-          returning: true,
-          where: {
-            // eslint-disable-next-line prettier/prettier
-          customer_id: customerId,
+          customer_id: {
+            // compare array of [Op.like] queries
+            [Op.not]: customerId,
           },
-        }
-      );
-      const customer = await Customer.findByPk(customerId);
-      return res.status(200).json(customer);
+        },
+      });
+      if (!existingEmail) {
+        await Customer.update(
+          {
+            email,
+            name,
+            day_phone,
+            eve_phone,
+            mob_phone,
+          },
+          {
+            returning: true,
+            where: {
+              // eslint-disable-next-line prettier/prettier
+            customer_id: customerId,
+            },
+          }
+        );
+        const customer = await Customer.findByPk(customerId);
+        delete customer.password;
+        return res.status(200).json(customer);
+      }
+      return res.status(403).json({ message: 'Email already taken' });
     } catch (error) {
       return next(error);
     }
@@ -225,7 +273,15 @@ class CustomerController {
     // write code to update customer address info such as address_1, address_2, city, region, postal_code, country
     // and shipping_region_id
     // eslint-disable-next-line camelcase
-    const { address_1, address_2, city, region, postal_code, country, shipping_region_id } = req.body;
+    const {
+      address_1, // eslint-disable-line
+      address_2, // eslint-disable-line
+      city,
+      region,
+      postal_code, // eslint-disable-line
+      country,
+      shipping_region_id, // eslint-disable-line
+    } = req.body;
     const accessToken = req.headers.authorization;
     const decodedToken = jwt.decode(accessToken.substring(7)); // remove the Bearer tag
     const customerId = decodedToken.customer_id;

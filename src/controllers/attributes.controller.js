@@ -77,6 +77,7 @@ class AttributeController {
         where: {
           attribute_id,
         },
+        attributes: ['attribute_value_id', 'value'],
       });
       return res.status(200).json(attributeValues);
     } catch (error) {
@@ -94,27 +95,40 @@ class AttributeController {
     // Write code to get all attribute values for a product using the product id provided in the request param
     try {
       const { product_id } = req.params; // eslint-disable-line
-      const productAttributeValuesID = await ProductAttribute.findAll({
+      const productAttributesArray = await ProductAttribute.findAll({
         where: {
           product_id,
         },
-        attributes: ['attribute_value_id'],
-      });
-      const productAttributes = [];
-      const valuesIDArray = [];
-      productAttributeValuesID.map(id => valuesIDArray.push(id.attribute_value_id));
-      // eslint-disable-next-line no-plusplus
-      for (let i = 0; i < valuesIDArray.length; i++) {
-        // eslint-disable-next-line no-await-in-loop
-        const productAttribute = await AttributeValue.findOne({
-          where: {
-            attribute_value_id: valuesIDArray[i],
+        include: [
+          {
+            model: AttributeValue,
+            attributes: ['attribute_value_id', 'value'],
+            include: [
+              {
+                model: Attribute,
+                as: 'attribute_type',
+                attributes: ['name'],
+              },
+            ],
           },
-        });
-        if (productAttribute) {
-          productAttributes.push(productAttribute);
-        }
-      }
+        ],
+        attributes: [],
+      });
+      const productAttributes = productAttributesArray.map(productAttribute => {
+        const {
+          // eslint-disable-next-line camelcase
+          attribute_value_id,
+          value,
+          // eslint-disable-next-line camelcase
+          attribute_type,
+        } = productAttribute.dataValues.AttributeValue;
+        const { name } = attribute_type.dataValues;
+        return {
+          attribute_name: name,
+          attribute_value_id,
+          attribute_value: value,
+        };
+      });
       return res.status(200).json(productAttributes);
     } catch (error) {
       return next(error);
