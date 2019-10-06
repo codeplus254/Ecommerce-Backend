@@ -22,6 +22,9 @@ import { Order, OrderDetail, Customer, ShoppingCart, Product } from '../database
 const uuidv4 = require('uuid/v4');
 const jwt = require('jsonwebtoken');
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
+const sgMail = require('@sendgrid/mail');
+
+sgMail.setApiKey(process.env.SENDGRID_API_KEY);
 /**
  *
  *
@@ -340,7 +343,12 @@ class ShoppingCartController {
   static async getOrderSummary(req, res, next) {
     const { order_id } = req.params;  // eslint-disable-line
     try {
-      const order = await OrderDetail.findByPk(order_id);
+      const order = await OrderDetail.findOne({
+        where: {
+          order_id,
+        },
+        attributes: ['product_id', 'attributes', 'product_name', 'quantity', 'unit_cost'],
+      });
       if (order) {
         return res.status(200).json({
           order_id,
@@ -366,21 +374,25 @@ class ShoppingCartController {
     // eslint-disable-next-line camelcase
     const { order_id } = req.params;
     try {
-      const orders = await Order.findOne({
+      const order = await Order.findOne({
         where: {
           order_id,
         },
         include: [
           {
             model: Customer,
+            as: 'customer',
             attributes: ['name'],
           },
         ],
-        raw: true,
         attributes: ['order_id', 'total_amount', 'created_on', 'shipped_on', 'status'],
       });
-      if (orders) {
-        return res.status(200).json(orders);
+      const { total_amount, created_on, shipping_on, status, customer } = order; //eslint-disable-line
+      const { name } = customer;
+      if (order) {
+        return res
+          .status(200)
+          .json({ order_id, total_amount, created_on, shipping_on, status, name });
       }
       return res.status(400).json('You have not yet placed an order. ');
     } catch (error) {
@@ -423,6 +435,17 @@ class ShoppingCartController {
             if (err && err.type === 'StripeCardError') {
               res.status(400).json('Your card was declined');
             }
+            if (!err && charge) {
+              const msg = {
+                to: email,
+                from: 'billing@shopmate.com',
+                subject: 'Your transaction was successful',
+                text: `Amount: ${charge.amount}`,
+                html: `<strong>Order Details:</strong> ${charge.billing_details}`,
+              };
+              sgMail.send(msg);
+            }
+
             res.status(200).json({
               charge,
               message: 'Your transaction was successful.',
