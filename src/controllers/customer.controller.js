@@ -39,26 +39,62 @@ class CustomerController {
     const { name, email, password } = req.body;
 
     try {
-      const customer = await Customer.findOne({
+      const passwordHash = bcrypt.hashSync(password, 8);
+      const newCustomer = await Customer.findOrCreate({
         where: {
           email,
         },
+        //attributes: { exclude: ['password'] },
+        defaults: {
+          name,
+          password,
+        },
       });
-      if (!customer) {
+      // eslint-disable-next-line no-underscore-dangle
+      if (newCustomer && !newCustomer[0]._options.isNewRecord) {
         // ensure the email has not been registered before
-        const passwordHash = bcrypt.hashSync(password, 10);
-        const newCustomer = await Customer.upsert({
+        return res.status(409).json({
+          error: {
+            status: 409,
+            message: `User with email ${email} already exist`,
+          },
+        });
+      }
+      const {
+        customer_id, // eslint-disable-line
+        address_1, // eslint-disable-line
+        address_2, // eslint-disable-line
+        city,
+        region,
+        postal_code, // eslint-disable-line
+        shipping_region_id, // eslint-disable-line
+        credit_card, // eslint-disable-line
+        day_phone, // eslint-disable-line
+        eve_phone, // eslint-disable-line
+        mob_phone, // eslint-disable-line
+      // eslint-disable-next-line no-underscore-dangle
+      } = newCustomer[0]._previousDataValues;
+      const accessToken = `Bearer ${await jwt.sign({ customer_id }, process.env.SECRET_KEY, {
+        expiresIn: '24h',
+      })}`;
+      return res.status(201).send({
+        customer: {
+          customer_id,
           name,
           email,
-          password: passwordHash,
-        });
-        return res.status(201).send(newCustomer);
-      }
-      return res.status(409).json({
-        error: {
-          status: 409,
-          message: `User with email ${email} already exist`,
+          address_1: address_1 || null, // eslint-disable-line
+          address_2: address_2 || null, // eslint-disable-line
+          city: city || null,
+          region: region || null,
+          postal_code: postal_code || null, // eslint-disable-line
+          shipping_region_id: shipping_region_id || null, // eslint-disable-line
+          credit_card: credit_card || null, // eslint-disable-line
+          day_phone: day_phone || null, // eslint-disable-line
+          eve_phone: eve_phone || null, // eslint-disable-line
+          mob_phone: mob_phone || null, // eslint-disable-line
         },
+        accessToken,
+        expiresIn: '24h',
       });
     } catch (error) {
       return next(email);
@@ -85,50 +121,50 @@ class CustomerController {
           email,
         },
       });
-
       if (customer) {
-        if (bcrypt.compareSync(password, customer.password)) {
-          const accessToken = `Bearer ${await jwt.sign(
-            { customer_id: customer.customer_id },
-            process.env.SECRET_KEY,
-            { expiresIn: '24h' }
-          )}`;
-          const {
-            customer_id, // eslint-disable-line
+        if (!bcrypt.compareSync(password, customer.password)) {
+          return res.status(401).json({ message: 'Incorrect password' });
+        }
+        const accessToken = `Bearer ${await jwt.sign(
+          { customer_id: customer.customer_id },
+          process.env.SECRET_KEY,
+          { expiresIn: '24h' }
+        )}`;
+        const {
+          customer_id, // eslint-disable-line
+          name,
+          email, // eslint-disable-line
+          address_1, // eslint-disable-line
+          address_2, // eslint-disable-line
+          city,
+          region,
+          postal_code, // eslint-disable-line
+          shipping_region_id, // eslint-disable-line
+          credit_card, // eslint-disable-line
+          day_phone, // eslint-disable-line
+          eve_phone, // eslint-disable-line
+          mob_phone, // eslint-disable-line
+        } = customer;
+        return res.status(200).json({
+          customer: {
+            customer_id,
             name,
-            email, // eslint-disable-line
-            address_1, // eslint-disable-line
-            address_2, // eslint-disable-line
+            email,
+            address_1,
+            address_2,
             city,
             region,
-            postal_code, // eslint-disable-line
-            shipping_region_id, // eslint-disable-line
-            credit_card, // eslint-disable-line
-            day_phone, // eslint-disable-line
-            eve_phone, // eslint-disable-line
-            mob_phone, // eslint-disable-line
-          } = customer;
-          return res.status(200).json({
-            customer: {
-              customer_id,
-              name,
-              email,
-              address_1,
-              address_2,
-              city,
-              region,
-              postal_code,
-              shipping_region_id,
-              credit_card,
-              day_phone,
-              eve_phone,
-              mob_phone,
-            },
-            accessToken,
-            expiresIn: '24h',
-          });
-        }
-        return res.status(401).json({ message: 'Incorrect password' });
+            postal_code,
+            shipping_region_id,
+            credit_card,
+            day_phone,
+            eve_phone,
+            mob_phone,
+          },
+          accessToken,
+          expiresIn: '24h',
+        });
+        
       }
       return res.status(404).json({
         error: {
@@ -194,7 +230,12 @@ class CustomerController {
     const customerId = decodedToken.customer_id;
 
     try {
-      const customer = await Customer.findByPk(customerId);
+      const customer = await Customer.findOne({
+        where: {
+          customer_id: customerId,
+        },
+        attributes: { exclude: ['password'] },
+      });
       if (customer) {
         return res.status(200).json(customer);
       }
@@ -249,8 +290,12 @@ class CustomerController {
             },
           }
         );
-        const customer = await Customer.findByPk(customerId);
-        delete customer.password;
+        const customer = await Customer.findOne({
+          where: {
+            customer_id: customerId,
+          },
+          attributes: { exclude: ['password'] },
+        });
         return res.status(200).json(customer);
       }
       return res.status(403).json({ message: 'Email already taken' });
@@ -304,7 +349,12 @@ class CustomerController {
           },
         }
       );
-      const customer = await Customer.findByPk(customerId);
+      const customer = await Customer.findOne({
+        where: {
+          customer_id: customerId,
+        },
+        attributes: { exclude: ['password'] },
+      });
       return res.status(200).json(customer);
     } catch (error) {
       return next(error);
@@ -341,7 +391,12 @@ class CustomerController {
           },
         }
       );
-      const customer = await Customer.findByPk(customerId);
+      const customer = await Customer.findOne({
+        where: {
+          customer_id: customerId,
+        },
+        attributes: { exclude: ['password'] },
+      });
       return res.status(200).json(customer);
     } catch (error) {
       return next(error);
